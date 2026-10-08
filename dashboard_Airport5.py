@@ -1,7 +1,7 @@
 """
 Dashboard: vluchten en vertraging op Zurich Airport, 2019-2020.
 
-Draaien met:   python -m streamlit run dashboard_Airport4.py
+Draaien met:   python -m streamlit run dashboard_Airport5.py
 
 Staat 'vluchten_compleet.csv' naast dit bestand, dan wordt die gelezen.
 Staat hij er niet, dan haalt het dashboard de drie bronnen zelf van
@@ -614,7 +614,7 @@ with tab_voorspel:
                                  f"naast; gokken zou {fout_gok:.1f} naast zitten"),
                           labels={"voorspeld": "Voorspeld te laat (%)",
                                   "te_laat": "Werkelijk te laat (%)", "jaar": ""})
-        grens = max(toets["voorspeld"].max(), toets["te_laat"].max()) + 5
+        grens = toets["voorspeld"].max() + 5
         fig8.add_scatter(x=[0, grens], y=[0, grens], mode="lines",
                          line=dict(color="#8a8880", dash="dash"),
                          name="perfecte voorspelling", hoverinfo="skip")
@@ -643,7 +643,7 @@ with tab_voorspel:
 
     st.divider()
 
-    
+
     st.subheader("Hoe snel zou Zurich herstellen van de eerste golf?")
     st.write("We trekken een rechte lijn door een paar maanden van 2020 en "
              "kijken wat die voorspelt voor de maanden die er niet in zaten. "
@@ -757,3 +757,28 @@ with tab_data:
     leeg = (data.isna().mean() * 100).round(1)
     st.dataframe(leeg[leeg > 0].sort_values(ascending=False).rename("Leeg (%)"),
                  use_container_width=True)
+
+# ======================================================================
+# CONCLUSIE: het antwoord op de vraag bovenaan
+# ======================================================================
+st.divider()
+st.subheader("Conclusie: plant Zurich zijn eigen vertraging?")
+st.markdown("""
+**Grotendeels wel.** De drukte op de luchthaven bepaalt het meest hoeveel
+vluchten te laat zijn. Het weer maakt het erger, en een deel is met deze data
+niet te verklaren.
+
+- **Drukte is de grootste oorzaak.** Hoe voller de maand, hoe meer te late
+  vluchten (r = 0,91). Corona was een natuurlijk experiment: de drukte viel
+  weg, het weer bleef, en de vertraging viel mee weg.
+- **Vertraging stapelt zich op over de dag.** In 2019 liep het aandeel te laat
+  op van 15% om 6 uur naar 41% rond 13 uur. In het rustige 2020 gebeurde dat
+  bijna niet.
+- **Van buiten: het weer.** Bij Bise-wind landt Zurich op banen met minder
+  capaciteit. Op Bise-dagen is 24% van de vluchten te laat, op gewone dagen 18%.
+- **Voorspelbaar, maar niet helemaal.** Drukte en weer voorspellen de
+  vertraging van een dag beter dan gokken (8 tegen 10 procentpunt fout). De
+  grootste missers zijn dagen met iets wat niet in de data staat, zoals een
+  storing of staking.
+""")
+st.caption("Cijfers over 2019 en 2020 samen, zonder filters.")
