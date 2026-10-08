@@ -334,8 +334,8 @@ with tab_kaart:
         grenzen = op_kaart.groupby("klasse")["mediaan"].agg(["min", "max"]).round(0)
         laagste, hoogste = op_kaart["vluchten"].min(), op_kaart["vluchten"].max()
 
-        kaart = folium.Map(location=midden, zoom_start=zoom,
-                           tiles=ESRI, attr="Tiles &copy; Esri")
+        kaart = folium.Map(location=midden, zoom_start=zoom, tiles=None)
+        folium.TileLayer(ESRI, attr="Tiles &copy; Esri", control=False).add_to(kaart)
 
         # Een laag per kleurklasse: zo is het lagenmenu meteen je legenda
         # en kan de lezer klassen aan- en uitzetten.
@@ -425,8 +425,9 @@ with tab_drukte:
             f"Elke stip is een maand. Per 1.000 extra vluchten komt er "
             f"{a * 1000:.1f} procentpunt te late vluchten bij. Corona is hier "
             "een natuurlijk experiment: de drukte viel weg, het weer bleef, en "
-            "de vertraging viel mee weg. Let wel op december 2020: weinig "
-            "vluchten en toch 19% te laat. Drukte verklaart veel, niet alles.")
+            "de vertraging viel mee weg. Niet elk punt ligt op de lijn: in de "
+            "zomer van 2020 viel de vertraging lager uit dan de drukte voorspelt, "
+            "in de winter juist hoger. Drukte verklaart veel, niet alles.")
 
         st.divider()
 
