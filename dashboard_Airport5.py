@@ -224,9 +224,9 @@ st.divider()
 # TWEEDE LAAG: detail, pas als je erom vraagt
 # ======================================================================
 
-tab_tijd, tab_kaart, tab_drukte, tab_weer, tab_voorspel, tab_data = st.tabs(
+tab_tijd, tab_kaart, tab_drukte, tab_weer, tab_voorspel, tab_data, tab_concl = st.tabs(
     ["Door de tijd", "Op de kaart", "Drukte", "Weer en baan",
-     "Voorspelling", "Over de data"])
+     "Voorspelling", "Over de data", "Conclusie"])
 
 
 # ---------------------------------------------------------------- TIJD
@@ -759,11 +759,11 @@ with tab_data:
                  use_container_width=True)
 
 # ======================================================================
-# CONCLUSIE: het antwoord op de vraag bovenaan
+# CONCLUSIE: het antwoord op de vraag bovenaan (eigen tabblad)
 # ======================================================================
-st.divider()
-st.subheader("Conclusie: plant Zurich zijn eigen vertraging?")
-st.markdown("""
+with tab_concl:
+    st.subheader("Conclusie: plant Zurich zijn eigen vertraging?")
+    st.markdown("""
 **Grotendeels wel.** De drukte op de luchthaven bepaalt het meest hoeveel
 vluchten te laat zijn. Het weer maakt het erger, en een deel is met deze data
 niet te verklaren.
@@ -781,4 +781,4 @@ niet te verklaren.
   grootste missers zijn dagen met iets wat niet in de data staat, zoals een
   storing of staking.
 """)
-st.caption("Cijfers over 2019 en 2020 samen, zonder filters.")
+    st.caption("Cijfers over 2019 en 2020 samen, zonder filters.")
