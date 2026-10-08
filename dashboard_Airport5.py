@@ -262,6 +262,37 @@ with tab_tijd:
     st.caption(f"Samengevat per {stap.lower()}. Per dag zie je het weekritme, "
                "per maand de seizoenen. Die keuze bepaalt welk patroon je ziet.")
 
+    # ------------------------------------------------------------------
+    # VERTRAGING PER UUR VAN DE DAG
+    # ------------------------------------------------------------------
+    st.divider()
+
+    # Percentage te laat per gepland uur, per jaar en per richting.
+    per_uur = (sel.groupby(["Jaar", "Uur", "Richting"], observed=True)
+               .agg(vluchten=("Vertraagd", "size"), te_laat=("Vertraagd", "mean"))
+               .reset_index())
+    per_uur["te_laat"] = (per_uur["te_laat"] * 100).round(1)
+    # Uren met weinig vluchten weglaten (5 uur is één vaste vlucht van 05:45).
+    per_uur = per_uur[per_uur["vluchten"] >= 300]
+
+    fig_uur = px.bar(per_uur, x="Uur", y="te_laat", color="Richting",
+                     barmode="group",
+                     facet_col="Jaar",              # 2019 en 2020 naast elkaar
+                     color_discrete_map={"Aankomst": BLAUW, "Vertrek": ORANJE},
+                     title=("In 2019 stapelt vertraging zich op over de dag, "
+                            "in het rustige coronajaar bijna niet"
+                            if sel["Jaar"].nunique() == 2
+                            else f"Te laat per uur in {sel['Jaar'].iloc[0]}"),
+                     labels={"Uur": "Gepland uur (vertrek of landing in Zürich)",
+                             "te_laat": "Te laat (%)", "Richting": ""},
+                     hover_data={"vluchten": True})
+    fig_uur.update_xaxes(dtick=1)
+    fig_uur.update_layout(height=430)
+    st.plotly_chart(fig_uur, use_container_width=True)
+    st.caption("Te laat = meer dan 15 minuten na de geplande tijd. Uren met "
+               "minder dan 300 vluchten zijn weggelaten, zoals 5 uur: dat is "
+               "één vaste vlucht van 05:45. Door het nachtvluchtverbod begint "
+               "de dag in Zürich pas om 6 uur.")
 
 # --------------------------------------------------------------- KAART
 with tab_kaart:
@@ -498,6 +529,121 @@ with tab_weer:
 
 # ---------------------------------------------------------- VOORSPELLING
 with tab_voorspel:
+        # ------------------------------------------------------------------
+    # VOORSPELLING VAN DE VERTRAGING
+    # Opgesteld met hulp van Claude (AI) en aangepast aan onze data.
+    # ------------------------------------------------------------------
+    st.subheader("Kun je voorspellen hoeveel vluchten op een dag te laat zijn?")
+    st.write("Het model leert op **70% van de dagen** en wordt getoetst op de "
+             "**andere 30%**, dagen die het nooit heeft gezien. Zo is de toets eerlijk.")
+
+    # 1. Eén rij per dag: hoeveel procent te laat, hoe druk, en het weer.
+    dag = (sel.groupby("Datum")
+           .agg(te_laat=("Vertraagd", "mean"),
+                vluchten=("Vertraagd", "size"),
+                wind=("Wind_kmh", "first"),
+                regen=("Neerslag_mm", "first"),
+                temp_min=("Temp_min", "first"))
+           .dropna()
+           .reset_index())
+    dag["te_laat"] = dag["te_laat"] * 100
+    dag["vorst"] = (dag["temp_min"] < 0).astype(int)     # 1 = vorst, 0 = geen vorst
+    dag["jaar"] = dag["Datum"].dt.year.astype(str)
+    # Dagen met minder dan 50 vluchten weglaten: een percentage over een
+    # handvol vluchten springt alle kanten op.
+    dag = dag[dag["vluchten"] >= 50]
+
+    # 2. De gebruiker kiest zelf welke factoren het model mag gebruiken.
+    FACTOREN = {"Drukte (vluchten per dag)": "vluchten",
+                "Wind (km/u)": "wind",
+                "Regen (mm)": "regen",
+                "Vorst (ja/nee)": "vorst"}
+    gekozen = st.multiselect("Welke factoren gebruikt het model?",
+                             list(FACTOREN), default=list(FACTOREN),
+                             help="Haal een factor weg en kijk hoeveel slechter "
+                                  "het model wordt. Zo zie je wat vertraging voorspelt.")
+
+    # Vaste willekeurige verdeling (seed 42), zodat iedereen hetzelfde ziet.
+    is_train = np.random.default_rng(42).random(len(dag)) < 0.7
+    train = dag[is_train]
+    toets = dag[~is_train].copy()
+
+    if not gekozen:
+        st.warning("Kies minstens één factor.")
+    else:
+        kol = [FACTOREN[f] for f in gekozen]
+
+        # 3. Lineaire regressie: de beste rechte lijn door alle factoren tegelijk.
+        #    np.linalg.lstsq zoekt de gewichten waarbij de fout het kleinst is.
+        #    De kolom met enen is het startgetal (het snijpunt).
+        X_train = np.column_stack([np.ones(len(train)), train[kol]])
+        gewichten, *_ = np.linalg.lstsq(X_train, train["te_laat"], rcond=None)
+
+        X_toets = np.column_stack([np.ones(len(toets)), toets[kol]])
+        toets["voorspeld"] = np.clip(X_toets @ gewichten, 0, 100)
+        toets["fout"] = toets["voorspeld"] - toets["te_laat"]
+
+        # 4. Hoe goed is hij? Vergelijk met steeds het gemiddelde gokken.
+        fout_model = toets["fout"].abs().mean()
+        fout_gok = (toets["te_laat"] - train["te_laat"].mean()).abs().mean()
+
+        # Welke factor weegt het zwaarst? Gewicht maal de spreiding van die factor,
+        # zodat km/u, mm en vluchten met elkaar te vergelijken zijn.
+        effect = {f: abs(g) * train[FACTOREN[f]].std()
+                  for f, g in zip(gekozen, gewichten[1:])}
+        zwaarst = max(effect, key=effect.get)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Gemiddelde fout van het model", f"{fout_model:.1f} procentpunt")
+        m2.metric("Fout als je steeds het gemiddelde gokt",
+                  f"{fout_gok:.1f} procentpunt")
+        m3.metric("Zwaarste factor", zwaarst.split(" (")[0])
+
+        # 5. Grafiek: elke stip is een toetsdag. Op de stippellijn is de
+        #    voorspelling precies goed; hoe verder ervan af, hoe groter de fout.
+        slecht = toets.assign(abs_fout=toets["fout"].abs()).nlargest(5, "abs_fout")
+        toets["label"] = ""
+        toets.loc[slecht.index, "label"] = toets.loc[slecht.index, "Datum"].dt.strftime("%d %b %Y")
+
+        fig8 = px.scatter(toets, x="voorspeld", y="te_laat", color="jaar",
+                          text="label",
+                          color_discrete_map={"2019": BLAUW, "2020": ORANJE},
+                          hover_data={"Datum": "|%d %b %Y", "vluchten": True,
+                                      "label": False},
+                          title=(f"Het model zit gemiddeld {fout_model:.1f} procentpunt "
+                                 f"naast; gokken zou {fout_gok:.1f} naast zitten"),
+                          labels={"voorspeld": "Voorspeld te laat (%)",
+                                  "te_laat": "Werkelijk te laat (%)", "jaar": ""})
+        grens = max(toets["voorspeld"].max(), toets["te_laat"].max()) + 5
+        fig8.add_scatter(x=[0, grens], y=[0, grens], mode="lines",
+                         line=dict(color="#8a8880", dash="dash"),
+                         name="perfecte voorspelling", hoverinfo="skip")
+        fig8.update_traces(textposition="top center", marker=dict(size=8),
+                           selector=dict(mode="markers+text"))
+        fig8.update_layout(height=480)
+        st.plotly_chart(fig8, use_container_width=True)
+        st.caption("Elke stip is een dag die het model niet heeft gezien. Boven de "
+                   "stippellijn: het werd erger dan voorspeld. Eronder: het viel mee. "
+                   "De vijf grootste missers hebben een datum. Haal hierboven een "
+                   "factor weg om te zien hoeveel die bijdraagt.")
+
+        # 6. Waar zit hij ernaast? De vijf dagen met de grootste fout.
+        with st.expander("De vijf dagen waarop het model er het verst naast zat"):
+            tabel = slecht[["Datum", "vluchten", "wind", "regen", "vorst",
+                            "te_laat", "voorspeld", "fout"]].copy()
+            tabel["Datum"] = tabel["Datum"].dt.strftime("%d-%m-%Y")
+            tabel = tabel.rename(columns={
+                "vluchten": "Vluchten", "wind": "Wind (km/u)", "regen": "Regen (mm)",
+                "vorst": "Vorst", "te_laat": "Werkelijk (%)",
+                "voorspeld": "Voorspeld (%)", "fout": "Fout (pp)"})
+            st.dataframe(tabel.round(1), use_container_width=True, hide_index=True)
+            st.caption("Negatieve fout: het werd erger dan het model verwachtte, "
+                       "bijvoorbeeld door iets dat niet in de data staat, zoals een "
+                       "storing of staking. Positief: het viel mee.")
+
+    st.divider()
+
+    
     st.subheader("Hoe snel zou Zurich herstellen van de eerste golf?")
     st.write("We trekken een rechte lijn door een paar maanden van 2020 en "
              "kijken wat die voorspelt voor de maanden die er niet in zaten. "
