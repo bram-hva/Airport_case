@@ -63,7 +63,11 @@ def bouw_dataset():
 
     # --- 1. vluchten ---
     v = pd.read_csv(SCHEDULE_URL, encoding="utf-8-sig", na_values=["-"])
-    v["Datum"] = pd.to_datetime(v["STD"], dayfirst=True, format="mixed")
+    v["Datum"] = pd.to_datetime(v["STD"], format="%d/%m/%Y", errors="coerce")
+    rest = v["Datum"].isna()
+    if rest.any():
+        v.loc[rest, "Datum"] = pd.to_datetime(v.loc[rest, "STD"],
+                                              format="ISO8601", errors="coerce")
     v = v.drop_duplicates(subset=["Identifier"], keep="first")
     v = v.rename(columns={"FLT": "Vluchtnummer", "STA_STD_ltc": "Gepland",
                           "ATA_ATD_ltc": "Werkelijk", "LSV": "Richting",
